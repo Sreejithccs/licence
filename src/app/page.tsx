@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
-
 interface PageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
-
 export default async function Home({
   searchParams,
 }: PageProps) {
