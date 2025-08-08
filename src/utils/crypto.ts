@@ -41,12 +41,16 @@ export const decryptToken = async (encryptedToken: string): Promise<string> => {
 /**
  * Hook to extract and decrypt the app_id from the URL token
  */
+interface TokenData {
+  app_id: string;
+}
+
 export const useDecryptedTokenData = (): [
-  any | null,
+  TokenData | null,
   boolean,
   Error | null
 ] => {
-  const [tokenData, setTokenData] = useState<any | null>(null);
+  const [tokenData, setTokenData] = useState<TokenData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const searchParams = useSearchParams();
@@ -65,7 +69,7 @@ export const useDecryptedTokenData = (): [
         const decryptedToken = await decryptToken(token);
 
         // Try to parse as JSON, if it fails, assume it's a plain string (app_id)
-        let data;
+        let data: TokenData;
         try {
           data = JSON.parse(decryptedToken);
         } catch (e) {

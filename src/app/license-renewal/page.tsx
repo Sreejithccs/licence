@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDecryptedTokenData } from "../../utils/crypto";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
 import Grid from "@mui/material/Grid";
@@ -46,9 +46,13 @@ interface LicenseData {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
-export default function LicenseRenewalPage() {
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token");
+interface PageProps {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}
+
+function LicenseRenewalContent() {
+  const clientSearchParams = useSearchParams();
+  const token = clientSearchParams.get("token");
 
   const [tokenData, tokenLoading, tokenError] = useDecryptedTokenData();
   const [licenseData, setLicenseData] = useState<LicenseData | null>(null);
@@ -98,13 +102,20 @@ export default function LicenseRenewalPage() {
         };
 
         setLicenseData(licenseData);
-      } catch (err: any) {
-        console.error("Error fetching license data:", err);
-        setError(
-          err.response?.data?.message ||
-            err.message ||
-            "Failed to fetch license data. Please try again later."
-        );
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          const axiosErr = err as AxiosError<{ message?: string }>;
+          console.error("Error fetching license data:", axiosErr);
+          setError(
+            axiosErr.response?.data?.message ||
+              axiosErr.message ||
+              "Failed to fetch license data. Please try again later."
+          );
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("An unknown error occurred.");
+        }
       } finally {
         setLoading(false);
       }
@@ -176,21 +187,28 @@ export default function LicenseRenewalPage() {
           response.data.license.expiry
         ).toLocaleDateString()}`
       );
-    } catch (err: any) {
-      console.error("Error renewing license:", err);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const axiosErr = err as AxiosError<{ message?: string }>;
+        console.error("Error renewing license:", axiosErr);
 
-      // Handle specific error for CEM authorization
-      if (err.response?.data?.message?.includes("not authorized to renew")) {
-        setError(
-          "You are not authorized to renew this license. Please contact your administrator."
-        );
+        // Handle specific error for CEM authorization
+        if (axiosErr.response?.data?.message?.includes("not authorized to renew")) {
+          setError(
+            "You are not authorized to renew this license. Please contact your administrator."
+          );
+        } else {
+          // Handle other errors
+          const errorMessage =
+            axiosErr.response?.data?.message ||
+            axiosErr.message ||
+            "Failed to renew license. Please try again later.";
+          setError(errorMessage);
+        }
+      } else if (err instanceof Error) {
+        setError(err.message);
       } else {
-        // Handle other errors
-        const errorMessage =
-          err.response?.data?.message ||
-          err.message ||
-          "Failed to renew license. Please try again later.";
-        setError(errorMessage);
+        setError("An unknown error occurred.");
       }
     } finally {
       setSubmitting(false);
@@ -377,5 +395,17 @@ export default function LicenseRenewalPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LicenseRenewalPage({ searchParams }: PageProps) {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    }>
+      <LicenseRenewalContent />
+    </Suspense>
   );
 }
