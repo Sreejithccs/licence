@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import axios, { AxiosError } from "axios";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
@@ -13,6 +13,8 @@ import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
+import { removeAuthToken } from "@/utils/auth";
+import withAuth from "@/components/withAuth";
 
 interface Client {
   id: string;
@@ -45,10 +47,7 @@ interface LicenseData {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
-interface PageProps {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}
-
+// This is the main content component that contains all the existing license renewal logic
 function LicenseRenewalContent() {
   const clientSearchParams = useSearchParams();
   const token = clientSearchParams.get("token");
@@ -177,6 +176,12 @@ function LicenseRenewalContent() {
           response.data.license.expiry
         ).toLocaleDateString()}`
       );
+      
+      // Clear auth token and redirect to login after a short delay
+      setTimeout(() => {
+        removeAuthToken();
+        window.location.href = '/login';
+      }, 2000);
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
         const axiosErr = err as AxiosError<{ message?: string }>;
@@ -447,16 +452,27 @@ function LicenseRenewalContent() {
   );
 }
 
-export default function LicenseRenewalPage({ searchParams }: PageProps) {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-        </div>
-      }
-    >
+const LoadingComponent = () => (
+  <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
+    <CircularProgress />
+    <Typography variant="body1" sx={{ mt: 2 }}>Loading license information...</Typography>
+  </Container>
+);
+
+const UnauthorizedComponent = () => (
+  <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
+    <Alert severity="error">
+      <AlertTitle>Authentication Required</AlertTitle>
+      Please sign in to access the license renewal page.
+    </Alert>
+  </Container>
+);
+
+export default withAuth({
+  ComponentIfLoggedIn: () => (
+    <Suspense fallback={<LoadingComponent />}>
       <LicenseRenewalContent />
     </Suspense>
-  );
-}
+  ),
+  ComponentIfLoggedOut: UnauthorizedComponent
+});
