@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { setAuthToken } from '@/utils/auth';
+import { setAuthData, UserData } from '@/utils/auth';
 import { TextField, Button, Container, Typography, Box, Paper, Alert } from '@mui/material';
 import Link from 'next/link';
 
@@ -46,12 +46,12 @@ export default function LoginPage() {
         throw new Error(data.message || 'Login failed');
       }
 
-      if (!data.token) {
-        throw new Error('No token received');
+      if (!data.token || !data.userData) {
+        throw new Error('Invalid response from server');
       }
 
-      // Store the token
-      setAuthToken(data.token);
+      // Store the token and user data
+      setAuthData(data.token, data.userData);
       
       // Redirect to the original URL or home
       router.push(callbackUrl);
