@@ -1,5 +1,6 @@
 {
   "name": "license-renewal",
+  "description:"license-renewal",
   "version": "0.1.0",
   "private": true,
   "scripts": {
