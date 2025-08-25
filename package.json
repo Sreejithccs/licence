@@ -1,6 +1,6 @@
 {
   "name": "license-renewal",
-  "description:"license-renewal ui",
+  "description":"license-renewal ui",
   "version": "0.1.0",
   "private": true,
   "scripts": {
