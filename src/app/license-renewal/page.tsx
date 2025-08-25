@@ -36,6 +36,10 @@ interface LicenseData {
   app_id: string;
   client: Client;
   grace_period: number;
+  source_key: {
+    android: string;
+    ios: string;
+  };
   cem: CEM;
 }
 
@@ -207,6 +211,7 @@ function LicenseRenewalContent({
           email: licenseData.cem.email,
           cem_code: licenseData.cem.cem_code,
         },
+        source_key: licenseData.source_key,
         grace_period: licenseData.grace_period,
         expiry: newExpiry.toISOString(),
         action: "renew",
