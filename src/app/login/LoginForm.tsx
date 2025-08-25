@@ -119,17 +119,6 @@ export default function LoginForm() {
             >
               {isLoading ? <CircularProgress size={24} /> : "Sign In"}
             </Button>
-            <Box sx={{ textAlign: "center" }}>
-              <Link href="/forgot-password" passHref>
-                <Typography
-                  variant="body2"
-                  color="primary"
-                  sx={{ cursor: "pointer" }}
-                >
-                  Forgot password?
-                </Typography>
-              </Link>
-            </Box>
           </Box>
         </Paper>
       </Box>
