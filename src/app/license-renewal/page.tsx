@@ -1,19 +1,14 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import axios, { AxiosError } from "axios";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
-import Grid from "@mui/material/Grid";
-import TextField from "@mui/material/TextField";
-import Button from "@mui/material/Button";
-import Paper from "@mui/material/Paper";
-import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
-import { removeAuthToken, getAuthToken, getCurrentUser } from "@/utils/auth";
+import { removeAuthToken, getCurrentUser } from "@/utils/auth";
 import withAuth from "@/components/withAuth";
 
 interface Client {
@@ -61,10 +56,15 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
 // This is the main content component that contains all the existing license renewal logic
-function LicenseRenewalContent() {
-  const clientSearchParams = useSearchParams();
-  const token = clientSearchParams.get("token");
-  const [user, setUser] = useState<UserToken | null>(null);
+function LicenseRenewalContent({
+  searchParams,
+}: {
+  searchParams: { token?: string };
+}) {
+  const searchParamsFromHook = useSearchParams();
+  // Use the token from props if available (SSR/SSG), otherwise from client-side
+  const token = searchParams?.token || searchParamsFromHook?.get("token") || "";
+  // const [user, setUser] = useState<UserToken | null>(null);
 
   const [licenseData, setLicenseData] = useState<LicenseData | null>(null);
   const [extensionDays, setExtensionDays] = useState<number | "">("");
@@ -106,19 +106,17 @@ function LicenseRenewalContent() {
 
         // Get current user data from session storage
         const currentUser = getCurrentUser();
-        console.log("Current User:", currentUser);
         if (!currentUser) {
           throw new Error("User not authenticated. Please log in again.");
         }
 
         // Set user state for other parts of the component
-        setUser(currentUser);
+        // setUser(currentUser);
 
         // Fetch license data
         const response = await axios.post(`${API_BASE_URL}/dev/renew-license`, {
           token,
         });
-        console.log("License data:", response.data.data);
 
         if (!response.data.success) {
           if (response.data.data?.isAlreadyRenewed) {
@@ -141,10 +139,8 @@ function LicenseRenewalContent() {
         // Check if the logged-in user is the CEM for this license
         // Use currentUser directly to avoid race condition with state updates
         if (currentUser.employeeID !== licenseData?.cem?.cem_code) {
-          console.log("License Data:", licenseData);
-          console.log("Current User:", currentUser);
           setError(
-            `You are not authorized to renew this license. Only the designated CEM (${licenseData?.cem?.name} - ${licenseData?.cem?.cem_code}) can renew this license.`
+            `You are not authorized to renew this license. Only the designated CEM can renew this license.`
           );
           setLoading(false);
           return;
@@ -527,11 +523,27 @@ const UnauthorizedComponent = () => (
   </Container>
 );
 
-export default withAuth({
-  ComponentIfLoggedIn: () => (
-    <Suspense fallback={<LoadingComponent />}>
-      <LicenseRenewalContent />
-    </Suspense>
-  ),
-  ComponentIfLoggedOut: UnauthorizedComponent,
-});
+// Define the page props type according to Next.js App Router
+type PageProps = {
+  params: { [key: string]: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
+};
+
+// Create a wrapper component that will be used with withAuth
+const AuthWrapper = () => {
+  const searchParams = useSearchParams();
+  const token = searchParams?.get("token") || "";
+
+  return <LicenseRenewalContent searchParams={{ token }} />;
+};
+
+// The actual page component
+export default function LicenseRenewalPage() {
+  const AuthComponent = withAuth({
+    ComponentIfLoggedIn: AuthWrapper,
+    ComponentIfLoggedOut: UnauthorizedComponent,
+    LoadingComponent: LoadingComponent,
+  });
+
+  return <AuthComponent />;
+}
