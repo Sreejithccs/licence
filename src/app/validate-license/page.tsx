@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import axios, { AxiosError } from 'axios';
+import { AxiosError } from 'axios';
 import { 
   Container, 
   Typography, 
@@ -18,9 +18,7 @@ import {
   MenuItem,
   SelectChangeEvent
 } from '@mui/material';
-import { getAuthToken } from '@/utils/auth';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+import api from '@/utils/api';
 
 export default function ValidateLicense() {
   const [appId, setAppId] = useState('');
@@ -52,13 +50,10 @@ export default function ValidateLicense() {
       // Format the key as os_sourceKey
       const formattedKey = `${os}_${sourceKey}`;
       
-      const response = await axios.get(`${API_BASE_URL}/validate`, {
+      const response = await api.get('/validate', {
         params: {
           app_id: appId,
           key: formattedKey,
-        },
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
         },
       });
 
@@ -71,15 +66,17 @@ export default function ValidateLicense() {
     } catch (err) {
       console.error('Validation error:', err);
       
-      if (axios.isAxiosError(err)) {
-        const axiosErr = err as AxiosError<{ message?: string }>;
-        setError(
-          axiosErr.response?.data?.message ||
-          axiosErr.message ||
-          'Failed to validate license. Please try again.'
-        );
-      } else if (err instanceof Error) {
-        setError(err.message);
+      if (err instanceof Error) {
+        if ('response' in err) {
+          const axiosError = err as { response?: { data?: { message?: string } } };
+          setError(
+            axiosError.response?.data?.message ||
+            err.message ||
+            'Failed to validate license. Please try again.'
+          );
+        } else {
+          setError(err.message);
+        }
       } else {
         setError('An unknown error occurred during validation.');
       }
