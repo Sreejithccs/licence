@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import axios, { AxiosError } from "axios";
+import { AxiosError } from "axios";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -10,6 +10,13 @@ import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import { removeAuthToken, getCurrentUser } from "@/utils/auth";
 import withAuth from "@/components/withAuth";
+import api from "@/utils/api";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
 
 interface Client {
   id: string;
@@ -36,6 +43,10 @@ interface LicenseData {
   app_id: string;
   client: Client;
   grace_period: number;
+  source_key: {
+    android: string;
+    ios: string;
+  };
   cem: CEM;
 }
 
@@ -52,8 +63,6 @@ interface UserToken {
   };
 }
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
 // This is the main content component that contains all the existing license renewal logic
 function LicenseRenewalContent({
@@ -78,6 +87,12 @@ function LicenseRenewalContent({
     isNotExpired?: boolean;
     canBeRenewed?: boolean;
   }>({});
+  
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [pendingRenewal, setPendingRenewal] = useState<{
+    daysToAdd: number;
+    newExpiry: Date;
+  } | null>(null);
 
   const handleLogout = () => {
     removeAuthToken();
@@ -113,8 +128,8 @@ function LicenseRenewalContent({
         // Set user state for other parts of the component
         // setUser(currentUser);
 
-        // Fetch license data
-        const response = await axios.post(`${API_BASE_URL}/dev/renew-license`, {
+        // Fetch license data using the API utility
+        const response = await api.post("/dev/renew-license", {
           token,
         });
 
@@ -148,16 +163,18 @@ function LicenseRenewalContent({
 
         setLicenseData(licenseData);
         setLicenseState({ canBeRenewed: licenseData?.canBeRenewed });
-      } catch (err: unknown) {
-        if (axios.isAxiosError(err)) {
-          const axiosErr = err as AxiosError<{ message?: string }>;
-          setError(
-            axiosErr.response?.data?.message ||
-              axiosErr.message ||
-              "Failed to fetch license data. Please try again later."
-          );
-        } else if (err instanceof Error) {
-          setError(err.message);
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          if ('response' in error) {
+            const axiosError = error as { response?: { data?: { message?: string } } };
+            setError(
+              axiosError.response?.data?.message ||
+                error.message ||
+                "Failed to fetch license data. Please try again later."
+            );
+          } else {
+            setError(error.message);
+          }
         } else {
           setError("An unknown error occurred.");
         }
@@ -177,18 +194,27 @@ function LicenseRenewalContent({
       return;
     }
 
+    // Calculate new expiry date from current date
+    const currentDate = new Date();
+    const daysToAdd = extensionMonths
+      ? Number(extensionMonths) * 30
+      : Number(extensionDays);
+    const newExpiry = new Date(
+      currentDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000
+    );
+
+    // Show confirmation dialog
+    setPendingRenewal({ daysToAdd, newExpiry });
+    setShowConfirmation(true);
+  };
+
+  const confirmRenewal = async () => {
+    if (!pendingRenewal || !licenseData) return;
+    
     try {
       setSubmitting(true);
       setError(null);
-
-      // Calculate new expiry date from current date
-      const currentDate = new Date();
-      const daysToAdd = extensionMonths
-        ? Number(extensionMonths) * 30
-        : Number(extensionDays);
-      const newExpiry = new Date(
-        currentDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000
-      );
+      setShowConfirmation(false);
 
       const payload = {
         app_id: licenseData.app_id,
@@ -207,12 +233,13 @@ function LicenseRenewalContent({
           email: licenseData.cem.email,
           cem_code: licenseData.cem.cem_code,
         },
+        source_key: licenseData.source_key,
         grace_period: licenseData.grace_period,
-        expiry: newExpiry.toISOString(),
+        expiry: pendingRenewal.newExpiry.toISOString(),
         action: "renew",
       };
 
-      const response = await axios.post(`${API_BASE_URL}/dev/issue`, payload);
+      const response = await api.post("/dev/issue", payload);
 
       setLicenseData({
         ...licenseData,
@@ -225,32 +252,37 @@ function LicenseRenewalContent({
           response.data.license.expiry
         ).toLocaleDateString()}`
       );
-
-      // Clear auth token and redirect to login after a short delay
-      setTimeout(() => {
-        removeAuthToken();
-        window.location.href = "/login";
-      }, 10000);
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        const axiosErr = err as AxiosError<{ message?: string }>;
-        console.error("Error renewing license:", axiosErr);
-
-        if (
-          axiosErr.response?.data?.message?.includes("not authorized to renew")
-        ) {
-          setError(
-            "You are not authorized to renew this license. Please contact your administrator."
-          );
+      
+      // Reset form
+      setExtensionDays("");
+      setExtensionMonths(1);
+    } catch (error: unknown) {
+      console.error("Error renewing license:", error);
+      
+      if (error instanceof Error) {
+        if ('response' in error) {
+          const axiosError = error as { 
+            response?: { 
+              data?: { 
+                message?: string 
+              } 
+            } 
+          };
+          
+          if (axiosError.response?.data?.message?.includes("not authorized to renew")) {
+            setError(
+              "You are not authorized to renew this license. Please contact your administrator."
+            );
+          } else {
+            setError(
+              axiosError.response?.data?.message ||
+              error.message ||
+              "Failed to renew license. Please try again later."
+            );
+          }
         } else {
-          const errorMessage =
-            axiosErr.response?.data?.message ||
-            axiosErr.message ||
-            "Failed to renew license. Please try again later.";
-          setError(errorMessage);
+          setError(error.message);
         }
-      } else if (err instanceof Error) {
-        setError(err.message);
       } else {
         setError("An unknown error occurred.");
       }
@@ -343,12 +375,48 @@ function LicenseRenewalContent({
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 relative">
       {renderLogoutButton()}
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden">
-          <div className="p-6 sm:p-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-6">
-              License Renewal
-            </h1>
+      <Container maxWidth="md">
+        {/* Confirmation Dialog */}
+        <Dialog
+          open={showConfirmation}
+          onClose={() => setShowConfirmation(false)}
+          aria-labelledby="alert-dialog-title"
+          aria-describedby="alert-dialog-description"
+        >
+          <DialogTitle id="alert-dialog-title">
+            Confirm License Renewal
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText id="alert-dialog-description">
+              Are you sure you want to renew this license? 
+              {pendingRenewal && (
+                <span>
+                  The license will be extended by {pendingRenewal.daysToAdd} days 
+                  until {pendingRenewal.newExpiry.toLocaleDateString()}.
+                </span>
+              )}
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowConfirmation(false)} color="primary">
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmRenewal} 
+              color="primary" 
+              autoFocus
+              disabled={submitting}
+            >
+              {submitting ? 'Renewing...' : 'Confirm Renewal'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white shadow-lg rounded-lg overflow-hidden">
+            <div className="p-6 sm:p-8">
+              <h1 className="text-3xl font-bold text-gray-900 mb-6">
+                License Renewal
+              </h1>
 
             {successMessage && (
               <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded mb-6">
@@ -501,6 +569,7 @@ function LicenseRenewalContent({
           </div>
         </div>
       </div>
+      </Container>
     </div>
   );
 }
