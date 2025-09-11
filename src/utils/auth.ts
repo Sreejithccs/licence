@@ -79,10 +79,8 @@ export function requireAuth(requiredRole?: UserRole) {
     WrappedComponent: ComponentType<P>
   ): ComponentType<P> {
     // Get the display name for debugging purposes
-    const displayName =
-      (WrappedComponent as any).displayName ||
-      (WrappedComponent as any).name ||
-      "Component";
+    const wrapped = WrappedComponent as React.ComponentType<P> & { displayName?: string; name?: string };
+    const displayName = wrapped.displayName ?? wrapped.name ?? "Component";
 
     // Create the wrapper component
     function AuthWrapper(props: P): ReactElement | null {

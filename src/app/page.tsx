@@ -1,20 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect } from "react";
 import Loader from "@/components/Loader";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getCurrentUser, UserRole, getAuthToken } from "@/utils/auth";
 import { getUserByEmpCode } from "@/utils/userService";
 
-export default function Home() {
+function Redirector() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    console.log("Page component mounted, checking auth...");
-    let isMounted = true;
 
     const handleNavigation = async () => {
       try {
@@ -72,27 +69,26 @@ export default function Home() {
           await router.push(redirectPath);
         } else {
           console.log("No redirection needed, already on the correct page");
-          setIsLoading(false);
         }
       } catch (error) {
         console.error("Navigation error:", error);
         // Fallback to login if there's an error
         await router.push("/login");
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
       }
     };
 
     handleNavigation();
 
-    // Cleanup function to prevent state updates after unmount
-    return () => {
-      isMounted = false;
-    };
   }, [router, token]);
 
-  // Show a loading state while redirecting
-  return <Loader message="Redirecting..." />;
+  return null;
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<Loader message="Redirecting..." /> }>
+      <Redirector />
+    </Suspense>
+  );
 }

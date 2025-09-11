@@ -6,19 +6,17 @@ import { isAuthenticated } from '@/utils/auth';
 import LoginForm from './LoginForm';
 import { CircularProgress, Box } from '@mui/material';
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/';
 
   useEffect(() => {
-    // If already logged in, redirect to callback URL or home
     if (isAuthenticated()) {
       router.push(callbackUrl);
     }
   }, [router, callbackUrl]);
 
-  // Show loading state while checking auth
   if (isAuthenticated()) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
@@ -27,15 +25,19 @@ export default function LoginPage() {
     );
   }
 
+  return <LoginForm callbackUrl={callbackUrl} />;
+}
+
+export default function LoginPage() {
   return (
-    <Suspense 
+    <Suspense
       fallback={
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
           <CircularProgress />
         </Box>
       }
     >
-      <LoginForm callbackUrl={callbackUrl} />
+      <LoginPageInner />
     </Suspense>
   );
 }

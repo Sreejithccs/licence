@@ -37,7 +37,7 @@ export default function EditLicensePage() {
         if (!resp.ok) throw new Error(await resp.text());
         const data = await resp.json();
         setCemOptions(Array.isArray(data) ? data : []);
-      } catch (e: any) { setCemError(e?.message || 'Failed to load CEMs'); }
+      } catch (e: unknown) { setCemError(e instanceof Error ? e.message : 'Failed to load CEMs'); }
       finally { setCemLoading(false); }
     };
     fetchCems();
@@ -76,43 +76,36 @@ export default function EditLicensePage() {
         };
         console.log("Setting form data:", formData);
         setForm(formData);
-      } catch (e: any) { 
+      } catch (e: unknown) { 
         console.error("Error fetching license:", e);
-        setError(e?.message || "Failed to load license"); 
+        setError(e instanceof Error ? e.message : "Failed to load license"); 
       }
       finally { setLoading(false); }
     };
     if (id) fetchLicense();
   }, [id]);
 
-  const onChange = (path: string, value: any) => {
+  type UpdatePath = 'cem.cem_code' | 'cem.name' | 'grace_period';
+  const onChange = (path: UpdatePath, value: string | number) => {
     if (!form) return;
-    
-    console.log("onChange called:", path, value);
-    
-    // Deep clone the form object to avoid mutation issues
-    const clone: any = {
+    const next: LicenseForm = {
       ...form,
       client: { ...form.client },
       cem: { ...form.cem },
       source_key: { ...form.source_key }
     };
-    
-    const parts = path.split(".");
-    let cur = clone;
-    
-    // Navigate to the parent of the target property
-    for (let i = 0; i < parts.length - 1; i++) {
-      if (!cur[parts[i]]) {
-        cur[parts[i]] = {};
-      }
-      cur = cur[parts[i]];
+    switch (path) {
+      case 'cem.cem_code':
+        next.cem.cem_code = String(value);
+        break;
+      case 'cem.name':
+        next.cem.name = String(value);
+        break;
+      case 'grace_period':
+        next.grace_period = Number(value);
+        break;
     }
-    
-    // Set the final value
-    cur[parts[parts.length - 1]] = value;
-    console.log("Updated form:", clone);
-    setForm(clone);
+    setForm(next);
   };
 
   const onSave = async () => {
@@ -122,12 +115,11 @@ export default function EditLicensePage() {
       setError("");
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/dev";
       const token = sessionStorage.getItem("authToken");
-      const dateOnly = form.expiry; // YYYY-MM-DD
-      const isoExpiry = new Date(`${dateOnly}T00:00:00.000Z`).toISOString();
+      // const dateOnly = form.expiry; // YYYY-MM-DD
       // Convert grace_period days back to hours for backend
       const graceHours = Number(form.grace_period) * 24;
       // Only send editable fields: cem (name and cem_code) and grace_period
-      const updateData: any = {
+      const updateData: { cem: { name: string; cem_code: string }; grace_period: number } = {
         cem: { name: form.cem.name, cem_code: form.cem.cem_code },
         grace_period: graceHours,
       };
@@ -152,9 +144,9 @@ export default function EditLicensePage() {
       
       console.log("License saved successfully");
       router.push("/admin");
-    } catch (e: any) { 
+    } catch (e: unknown) { 
       console.error("Error saving license:", e);
-      setError(e?.message || "Failed to save license"); 
+      setError(e instanceof Error ? e.message : "Failed to save license"); 
     }
     finally { setSaving(false); }
   };

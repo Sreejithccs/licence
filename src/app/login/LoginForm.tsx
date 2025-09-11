@@ -3,8 +3,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { setAuthData, UserRole, getAuthToken } from "@/utils/auth";
+import { useRouter } from "next/navigation";
+import { setAuthData, UserRole } from "@/utils/auth";
 import { getUserByEmpCode } from "@/utils/userService";
 import {
   TextField,
@@ -47,7 +47,7 @@ export default function LoginForm({ callbackUrl = "/" }: LoginFormProps) {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
+  // removed unused searchParams
 
   useEffect(() => {
     // If already logged in, redirect to callbackUrl

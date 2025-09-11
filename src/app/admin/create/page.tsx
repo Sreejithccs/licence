@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Container, Typography, Paper, TextField, Button, Grid, MenuItem, Box, Alert } from "@mui/material";
+import { Container, Typography, Paper, TextField, Button, Grid, MenuItem, Alert } from "@mui/material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -47,8 +47,8 @@ export default function CreateLicensePage() {
         }
         const data = await resp.json();
         setCemOptions(Array.isArray(data) ? data : []);
-      } catch (e: any) {
-        setCemError(e?.message || 'Failed to load CEMs');
+      } catch (e: unknown) {
+        setCemError(e instanceof Error ? e.message : 'Failed to load CEMs');
       } finally { setCemLoading(false); }
     };
     fetchCems();

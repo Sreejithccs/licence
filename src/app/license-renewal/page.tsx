@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AxiosError } from "axios";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -24,11 +23,7 @@ interface Client {
   contact: string;
 }
 
-interface User {
-  id: string;
-  name: string;
-  contact: string;
-}
+// Removed User type as backend no longer includes user on License
 
 interface CEM {
   name: string;
@@ -38,7 +33,6 @@ interface CEM {
 
 interface LicenseData {
   licenseKey: string;
-  user: User;
   expiry: string;
   app_id: string;
   client: Client;
@@ -52,18 +46,7 @@ interface LicenseData {
   status?: string;
 }
 
-interface UserToken {
-  userId: string;
-  employeeID: string;
-  name: string;
-  mail: string;
-  role: {
-    roleType: string;
-    read: boolean;
-    write: boolean;
-    edit: boolean;
-  };
-}
+
 
 
 // This is the main content component that contains all the existing license renewal logic
@@ -76,7 +59,6 @@ function LicenseRenewalContent({
   // Prefer id param when logged-in flow; fallback to legacy token
   const id = searchParams?.id || searchParamsFromHook?.get("id") || "";
   const token = searchParams?.token || searchParamsFromHook?.get("token") || "";
-  // const [user, setUser] = useState<UserToken | null>(null);
 
   const [licenseData, setLicenseData] = useState<LicenseData | null>(null);
   const [extensionDays, setExtensionDays] = useState<number | "">("");
@@ -232,11 +214,6 @@ function LicenseRenewalContent({
 
       const payload = {
         app_id: licenseData.app_id,
-        user: {
-          id: licenseData.user.id,
-          name: licenseData.user.name,
-          contact: licenseData.user.contact,
-        },
         client: {
           id: licenseData.client.id,
           name: licenseData.client.name,
@@ -448,14 +425,7 @@ function LicenseRenewalContent({
                   </label>
                   <p className="text-gray-900">{licenseData.licenseKey}</p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-500">
-                    User Name
-                  </label>
-                  <p className="text-gray-900">
-                    {licenseData.user?.name || "N/A"}
-                  </p>
-                </div>
+                
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-500">
                     Current Expiry Date
@@ -607,11 +577,7 @@ const UnauthorizedComponent = () => (
   </Container>
 );
 
-// Define the page props type according to Next.js App Router
-type PageProps = {
-  params: { [key: string]: string };
-  searchParams?: { [key: string]: string | string[] | undefined };
-};
+// Removed unused PageProps type
 
 // Create a wrapper component that will be used with withAuth
 const AuthWrapper = () => {

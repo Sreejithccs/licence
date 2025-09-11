@@ -1,10 +1,10 @@
 import { removeAuthToken } from './auth';
-import { useRouter } from 'next/navigation';
+type RouterLike = { push: (href: string) => void };
 
-export const handleLogout = async (router: any) => {
+export const handleLogout = async (router?: RouterLike | null) => {
   try {
     // No Next.js API usage; just clear client state and redirect
-    const response = { ok: true } as any;
+    const response = { ok: true };
 
     if (!response.ok) {
       console.error('Logout API call failed');

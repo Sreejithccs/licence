@@ -1,4 +1,4 @@
-import api from "./api";
+// removed unused api import
 
 export interface UserData {
   id: string;

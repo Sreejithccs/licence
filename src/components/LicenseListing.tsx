@@ -36,10 +36,10 @@ import {
   Delete as DeleteIcon,
   Autorenew as RenewIcon
 } from '@mui/icons-material';
+import type { ChipProps } from '@mui/material';
 import { format } from 'date-fns';
 
-// Deprecated: legacy token-based renewal is not used when logged-in
-const encodeToken = (appId: string) => encodeURIComponent(btoa(appId));
+// Deprecated token-based renewal utility removed (unused)
 
 type License = {
   _id: string;
@@ -132,7 +132,7 @@ export default function LicenseListing({
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/dev';
       const token = sessionStorage.getItem('authToken');
-      const response = await fetch(`${apiBaseUrl}/licenses/${licenseToDelete}`, {
+      const response = await fetch(`${apiBaseUrl}/license/${licenseToDelete}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
@@ -149,7 +149,7 @@ export default function LicenseListing({
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): ChipProps['color'] => {
     switch (status) {
       case 'active': return 'success';
       case 'expired': return 'error';
@@ -160,11 +160,14 @@ export default function LicenseListing({
   };
 
   const canEdit = (license: License) => {
+    console.log("license", license)
     // Only admin can edit licenses
     return user?.role === UserRole.ADMIN;
   };
 
   const canDelete = (license: License) => {
+    console.log("license", license)
+
     // Only admin can delete licenses
     return user?.role === UserRole.ADMIN;
   };
@@ -273,7 +276,7 @@ export default function LicenseListing({
                     <TableCell>
                       <Chip 
                         label={license.status.toUpperCase()} 
-                        color={getStatusColor(license.status) as any} 
+                        color={getStatusColor(license.status)} 
                         size="small" 
                       />
                     </TableCell>
