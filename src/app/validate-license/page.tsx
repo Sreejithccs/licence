@@ -90,10 +90,7 @@ export default function ValidateLicense() {
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Validate License
-      </Typography>
+    <Container maxWidth="md">
       
       <Paper sx={{ p: 4, mb: 4 }}>
         <Typography variant="h6" gutterBottom>

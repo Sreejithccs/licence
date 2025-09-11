@@ -48,6 +48,8 @@ interface LicenseData {
     ios: string;
   };
   cem: CEM;
+  _id?: string;
+  status?: string;
 }
 
 interface UserToken {
@@ -68,10 +70,11 @@ interface UserToken {
 function LicenseRenewalContent({
   searchParams,
 }: {
-  searchParams: { token?: string };
+  searchParams: { id?: string; token?: string };
 }) {
   const searchParamsFromHook = useSearchParams();
-  // Use the token from props if available (SSR/SSG), otherwise from client-side
+  // Prefer id param when logged-in flow; fallback to legacy token
+  const id = searchParams?.id || searchParamsFromHook?.get("id") || "";
   const token = searchParams?.token || searchParamsFromHook?.get("token") || "";
   // const [user, setUser] = useState<UserToken | null>(null);
 
@@ -114,46 +117,42 @@ function LicenseRenewalContent({
       setError(null);
 
       try {
-        // Check for token in URL
-        if (!token) {
-          throw new Error("No token provided in the URL");
-        }
-
         // Get current user data from session storage
         const currentUser = getCurrentUser();
         if (!currentUser) {
           throw new Error("User not authenticated. Please log in again.");
         }
 
-        // Set user state for other parts of the component
-        // setUser(currentUser);
-
-        // Fetch license data using the API utility
-        const response = await api.post("/dev/renew-license", {
-          token,
-        });
-
-        if (!response.data.success) {
-          if (response.data.data?.isAlreadyRenewed) {
-            setLicenseState({ isAlreadyRenewed: true });
-            setLicenseData(response.data.data);
-            return;
+        let loaded: LicenseData | null = null;
+        if (id) {
+          // Logged-in path: fetch by id
+          const byId = await api.get(`/license/${encodeURIComponent(id)}`);
+          loaded = byId.data as LicenseData;
+        } else if (token) {
+          // Legacy token path (if deep-linked)
+          const response = await api.post("/renew-license", { token });
+          if (!response.data.success) {
+            if (response.data.data?.isAlreadyRenewed) {
+              setLicenseState({ isAlreadyRenewed: true });
+              setLicenseData(response.data.data);
+              return;
+            }
+            if (response.data.data?.isNotExpired) {
+              setLicenseState({ isNotExpired: true });
+              setLicenseData(response.data.data);
+              return;
+            }
+            throw new Error(response.data.message || "Failed to fetch license data");
           }
-          if (response.data.data?.isNotExpired) {
-            setLicenseState({ isNotExpired: true });
-            setLicenseData(response.data.data);
-            return;
-          }
-          throw new Error(
-            response.data.message || "Failed to fetch license data"
-          );
+          loaded = response.data.data as LicenseData;
+        } else {
+          throw new Error("Missing license identifier.");
         }
 
-        const licenseData = response.data.data;
+        if (!loaded) throw new Error("Unable to load license data");
 
         // Check if the logged-in user is the CEM for this license
-        // Use currentUser directly to avoid race condition with state updates
-        if (currentUser.employeeID !== licenseData?.cem?.cem_code) {
+        if (currentUser.empCode !== loaded?.cem?.cem_code && currentUser.role !== 'admin') {
           setError(
             `You are not authorized to renew this license. Only the designated CEM can renew this license.`
           );
@@ -161,8 +160,23 @@ function LicenseRenewalContent({
           return;
         }
 
-        setLicenseData(licenseData);
-        setLicenseState({ canBeRenewed: licenseData?.canBeRenewed });
+        // Handle already renewed status consistently
+        if (loaded.status === 'renewed') {
+          setLicenseData(loaded);
+          setLicenseState({ isAlreadyRenewed: true });
+          return;
+        }
+
+        // Enforce allow renew only if expired
+        const isExpired = new Date(loaded.expiry) <= new Date();
+        if (!isExpired) {
+          setLicenseData(loaded);
+          setLicenseState({ isNotExpired: true });
+          return;
+        }
+
+        setLicenseData(loaded);
+        setLicenseState({ canBeRenewed: true });
       } catch (error: unknown) {
         if (error instanceof Error) {
           if ('response' in error) {
@@ -184,7 +198,7 @@ function LicenseRenewalContent({
     };
 
     fetchLicenseData();
-  }, [token]);
+  }, [id, token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,7 +253,8 @@ function LicenseRenewalContent({
         action: "renew",
       };
 
-      const response = await api.post("/dev/issue", payload);
+      // Use base URL's /issue (don't duplicate /dev)
+      const response = await api.post("/issue", payload);
 
       setLicenseData({
         ...licenseData,
@@ -328,7 +343,7 @@ function LicenseRenewalContent({
         {renderLogoutButton()}
         <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded">
           <p className="font-bold">License Active</p>
-          <p>This license is still active and does not need renewal.</p>
+          <p>This license is not expired and cannot be renewed.</p>
           <div className="mt-4">
             <p>
               <strong>License Key:</strong> {licenseData.licenseKey}
@@ -601,9 +616,9 @@ type PageProps = {
 // Create a wrapper component that will be used with withAuth
 const AuthWrapper = () => {
   const searchParams = useSearchParams();
+  const id = searchParams?.get("id") || "";
   const token = searchParams?.get("token") || "";
-
-  return <LicenseRenewalContent searchParams={{ token }} />;
+  return <LicenseRenewalContent searchParams={{ id, token }} />;
 };
 
 // The actual page component
