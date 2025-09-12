@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AxiosError } from 'axios';
+// removed unused useRouter and AxiosError imports
 import { 
   Container, 
   Typography, 
@@ -32,7 +31,7 @@ export default function ValidateLicense() {
     licenseKey?: string;
     expiry?: string;
   } | null>(null);
-  const router = useRouter();
+  // removed unused router
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,10 +89,7 @@ export default function ValidateLicense() {
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Validate License
-      </Typography>
+    <Container maxWidth="md">
       
       <Paper sx={{ p: 4, mb: 4 }}>
         <Typography variant="h6" gutterBottom>

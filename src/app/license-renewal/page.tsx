@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AxiosError } from "axios";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -24,11 +23,7 @@ interface Client {
   contact: string;
 }
 
-interface User {
-  id: string;
-  name: string;
-  contact: string;
-}
+// Removed User type as backend no longer includes user on License
 
 interface CEM {
   name: string;
@@ -38,7 +33,6 @@ interface CEM {
 
 interface LicenseData {
   licenseKey: string;
-  user: User;
   expiry: string;
   app_id: string;
   client: Client;
@@ -48,32 +42,23 @@ interface LicenseData {
     ios: string;
   };
   cem: CEM;
+  _id?: string;
+  status?: string;
 }
 
-interface UserToken {
-  userId: string;
-  employeeID: string;
-  name: string;
-  mail: string;
-  role: {
-    roleType: string;
-    read: boolean;
-    write: boolean;
-    edit: boolean;
-  };
-}
+
 
 
 // This is the main content component that contains all the existing license renewal logic
 function LicenseRenewalContent({
   searchParams,
 }: {
-  searchParams: { token?: string };
+  searchParams: { id?: string; token?: string };
 }) {
   const searchParamsFromHook = useSearchParams();
-  // Use the token from props if available (SSR/SSG), otherwise from client-side
+  // Prefer id param when logged-in flow; fallback to legacy token
+  const id = searchParams?.id || searchParamsFromHook?.get("id") || "";
   const token = searchParams?.token || searchParamsFromHook?.get("token") || "";
-  // const [user, setUser] = useState<UserToken | null>(null);
 
   const [licenseData, setLicenseData] = useState<LicenseData | null>(null);
   const [extensionDays, setExtensionDays] = useState<number | "">("");
@@ -114,46 +99,42 @@ function LicenseRenewalContent({
       setError(null);
 
       try {
-        // Check for token in URL
-        if (!token) {
-          throw new Error("No token provided in the URL");
-        }
-
         // Get current user data from session storage
         const currentUser = getCurrentUser();
         if (!currentUser) {
           throw new Error("User not authenticated. Please log in again.");
         }
 
-        // Set user state for other parts of the component
-        // setUser(currentUser);
-
-        // Fetch license data using the API utility
-        const response = await api.post("/dev/renew-license", {
-          token,
-        });
-
-        if (!response.data.success) {
-          if (response.data.data?.isAlreadyRenewed) {
-            setLicenseState({ isAlreadyRenewed: true });
-            setLicenseData(response.data.data);
-            return;
+        let loaded: LicenseData | null = null;
+        if (id) {
+          // Logged-in path: fetch by id
+          const byId = await api.get(`/license/${encodeURIComponent(id)}`);
+          loaded = byId.data as LicenseData;
+        } else if (token) {
+          // Legacy token path (if deep-linked)
+          const response = await api.post("/renew-license", { token });
+          if (!response.data.success) {
+            if (response.data.data?.isAlreadyRenewed) {
+              setLicenseState({ isAlreadyRenewed: true });
+              setLicenseData(response.data.data);
+              return;
+            }
+            if (response.data.data?.isNotExpired) {
+              setLicenseState({ isNotExpired: true });
+              setLicenseData(response.data.data);
+              return;
+            }
+            throw new Error(response.data.message || "Failed to fetch license data");
           }
-          if (response.data.data?.isNotExpired) {
-            setLicenseState({ isNotExpired: true });
-            setLicenseData(response.data.data);
-            return;
-          }
-          throw new Error(
-            response.data.message || "Failed to fetch license data"
-          );
+          loaded = response.data.data as LicenseData;
+        } else {
+          throw new Error("Missing license identifier.");
         }
 
-        const licenseData = response.data.data;
+        if (!loaded) throw new Error("Unable to load license data");
 
         // Check if the logged-in user is the CEM for this license
-        // Use currentUser directly to avoid race condition with state updates
-        if (currentUser.employeeID !== licenseData?.cem?.cem_code) {
+        if (currentUser.empCode !== loaded?.cem?.cem_code && currentUser.role !== 'admin') {
           setError(
             `You are not authorized to renew this license. Only the designated CEM can renew this license.`
           );
@@ -161,8 +142,23 @@ function LicenseRenewalContent({
           return;
         }
 
-        setLicenseData(licenseData);
-        setLicenseState({ canBeRenewed: licenseData?.canBeRenewed });
+        // Handle already renewed status consistently
+        if (loaded.status === 'renewed') {
+          setLicenseData(loaded);
+          setLicenseState({ isAlreadyRenewed: true });
+          return;
+        }
+
+        // Enforce allow renew only if expired
+        const isExpired = new Date(loaded.expiry) <= new Date();
+        if (!isExpired) {
+          setLicenseData(loaded);
+          setLicenseState({ isNotExpired: true });
+          return;
+        }
+
+        setLicenseData(loaded);
+        setLicenseState({ canBeRenewed: true });
       } catch (error: unknown) {
         if (error instanceof Error) {
           if ('response' in error) {
@@ -184,7 +180,7 @@ function LicenseRenewalContent({
     };
 
     fetchLicenseData();
-  }, [token]);
+  }, [id, token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,11 +214,6 @@ function LicenseRenewalContent({
 
       const payload = {
         app_id: licenseData.app_id,
-        user: {
-          id: licenseData.user.id,
-          name: licenseData.user.name,
-          contact: licenseData.user.contact,
-        },
         client: {
           id: licenseData.client.id,
           name: licenseData.client.name,
@@ -239,7 +230,8 @@ function LicenseRenewalContent({
         action: "renew",
       };
 
-      const response = await api.post("/dev/issue", payload);
+      // Use base URL's /issue (don't duplicate /dev)
+      const response = await api.post("/issue", payload);
 
       setLicenseData({
         ...licenseData,
@@ -328,7 +320,7 @@ function LicenseRenewalContent({
         {renderLogoutButton()}
         <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded">
           <p className="font-bold">License Active</p>
-          <p>This license is still active and does not need renewal.</p>
+          <p>This license is not expired and cannot be renewed.</p>
           <div className="mt-4">
             <p>
               <strong>License Key:</strong> {licenseData.licenseKey}
@@ -433,14 +425,7 @@ function LicenseRenewalContent({
                   </label>
                   <p className="text-gray-900">{licenseData.licenseKey}</p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-500">
-                    User Name
-                  </label>
-                  <p className="text-gray-900">
-                    {licenseData.user?.name || "N/A"}
-                  </p>
-                </div>
+                
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-500">
                     Current Expiry Date
@@ -592,18 +577,14 @@ const UnauthorizedComponent = () => (
   </Container>
 );
 
-// Define the page props type according to Next.js App Router
-type PageProps = {
-  params: { [key: string]: string };
-  searchParams?: { [key: string]: string | string[] | undefined };
-};
+// Removed unused PageProps type
 
 // Create a wrapper component that will be used with withAuth
 const AuthWrapper = () => {
   const searchParams = useSearchParams();
+  const id = searchParams?.get("id") || "";
   const token = searchParams?.get("token") || "";
-
-  return <LicenseRenewalContent searchParams={{ token }} />;
+  return <LicenseRenewalContent searchParams={{ id, token }} />;
 };
 
 // The actual page component

@@ -1,8 +1,11 @@
 "use client";
 
+"use client";
+
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { setAuthData } from "@/utils/auth";
+import { useRouter } from "next/navigation";
+import { setAuthData, UserRole } from "@/utils/auth";
+import { getUserByEmpCode } from "@/utils/userService";
 import {
   TextField,
   Button,
@@ -13,20 +16,42 @@ import {
   CircularProgress,
   Container,
 } from "@mui/material";
-import Link from "next/link";
 
-export default function LoginForm() {
+interface AuthResponse {
+  token: string;
+  userData: {
+    _id: string;
+    userId: string;
+    employeeID: string;
+    role: {
+      roleType: string;
+      read: boolean;
+      write: boolean;
+      edit: boolean;
+    };
+    name: string;
+    mail: string;
+    createdAt: string;
+    updatedAt: string;
+    __v: number;
+  };
+}
+
+interface LoginFormProps {
+  callbackUrl?: string;
+}
+
+export default function LoginForm({ callbackUrl = "/" }: LoginFormProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/";
+  // removed unused searchParams
 
   useEffect(() => {
     // If already logged in, redirect to callbackUrl
-    if (typeof window !== "undefined" && localStorage.getItem("authToken")) {
+    if (typeof window !== "undefined" && sessionStorage.getItem("authToken")) {
       router.push(callbackUrl);
     }
   }, [router, callbackUrl]);
@@ -34,30 +59,109 @@ export default function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // Basic validation
+    if (!username || !password) {
+      setError("Please enter both username and password");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      if (!process.env.NEXT_PUBLIC_AUTH_URL) {
-        throw new Error("Authentication URL is not configured");
-      }
-
-      const response = await fetch(process.env.NEXT_PUBLIC_AUTH_URL, {
+      const authUrl =
+        process.env.NEXT_PUBLIC_AUTH_URL || "http://localhost:3000/dev/login";
+      const response = await fetch(authUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password,
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || "Authentication failed");
       }
 
-      const data = await response.json();
-      setAuthData(data.token, data.userData);
-      router.push(callbackUrl);
+      const data: AuthResponse = await response.json();
+      console.log("Login response data:", data);
+
+      if (!data.token || !data.userData) {
+        throw new Error("Invalid response from authentication server");
+      }
+
+      console.log("Token received:", data.token.substring(0, 50) + "...");
+
+      // First, set the basic auth data
+      const tempUserData = {
+        id: data.userData._id,
+        username: data.userData.userId,
+        empCode: data.userData.employeeID,
+        role: data.userData.role.roleType as UserRole, // This will be updated from server
+        isActive: true,
+        name: data.userData.name,
+        mail: data.userData.mail,
+        createdAt: data.userData.createdAt,
+        updatedAt: data.userData.updatedAt,
+        __v: data.userData.__v,
+      };
+
+      // Store the token and temporary user data
+      setAuthData(data.token, tempUserData);
+      console.log(
+        "Token stored in sessionStorage:",
+        sessionStorage.getItem("authToken") ? "Yes" : "No"
+      );
+      console.log(
+        "Stored token preview:",
+        sessionStorage.getItem("authToken")?.substring(0, 50) + "..."
+      );
+
+      try {
+        // Fetch the latest user data from the server using the serverless endpoint
+        const serverUserData = await getUserByEmpCode(
+          data.userData.employeeID,
+          data.token
+        );
+
+        // Update the user data with the role from the server
+        const updatedUserData = {
+          ...tempUserData,
+          role: serverUserData.role as UserRole,
+        };
+
+        // Update the stored user data with the role from the server
+        sessionStorage.setItem("userData", JSON.stringify(updatedUserData));
+      } catch (error) {
+        console.error("Error fetching user role:", error);
+        // Continue with the original data if there's an error
+      }
+
+      // Clear form fields
+      setUsername("");
+      setPassword("");
+
+      // Get the final user data (either from server or fallback to temp data)
+      const finalUserData = JSON.parse(
+        sessionStorage.getItem("userData") || "{}"
+      );
+      const userRole = finalUserData.role || tempUserData.role;
+      // Use the callbackUrl if provided, otherwise use role-based redirect
+      if (callbackUrl) {
+        router.push(callbackUrl);
+      } else if (userRole === UserRole.ADMIN) {
+        router.push("/admin");
+      } else if (userRole === UserRole.CEM) {
+        router.push("/cem-dashboard");
+      } else {
+        router.push("/");
+      }
     } catch (err) {
+      console.error("Login error:", err);
       setError(
         err instanceof Error ? err.message : "An error occurred during login"
       );
@@ -83,7 +187,13 @@ export default function LoginForm() {
             Sign in
           </Typography>
           {error && <Alert severity="error">{error}</Alert>}
-          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+          <Box
+            component="form"
+            onSubmit={handleSubmit}
+            sx={{ mt: 2 }}
+            method="post"
+            action="#"
+          >
             <TextField
               margin="normal"
               required
