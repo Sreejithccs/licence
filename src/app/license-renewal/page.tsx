@@ -1,14 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
-import CircularProgress from "@mui/material/CircularProgress";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
-import { removeAuthToken, getCurrentUser } from "@/utils/auth";
-import withAuth from "@/components/withAuth";
+import { getCurrentUser, removeAuthToken } from "@/utils/auth";
 import api from "@/utils/api";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -16,25 +13,50 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
+import Radio from "@mui/material/Radio";
+import RadioGroup from "@mui/material/RadioGroup";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormControl from "@mui/material/FormControl";
+import FormLabel from "@mui/material/FormLabel";
+import Container from "@mui/material/Container";
+import CircularProgress from "@mui/material/CircularProgress";
+import Box from "@mui/material/Box";
 
-interface Client {
-  id: string;
+interface ExtensionPeriod {
+  _id: string;
   name: string;
-  contact: string;
+  days: number;
+  description: string;
 }
 
-// Removed User type as backend no longer includes user on License
+interface Client {
+  _id: string;
+  name: string;
+  email?: string;
+  contact?: string;
+  code?: string;
+  country?: string;
+}
 
 interface CEM {
+  _id: string;
   name: string;
   email: string;
-  cem_code: string;
+  empCode: string;
+  role?: string;
+}
+
+interface Application {
+  _id: string;
+  name: string;
+  identifier: string;
 }
 
 interface LicenseData {
   licenseKey: string;
   expiry: string;
   app_id: string;
+  application: Application;
   client: Client;
   grace_period: number;
   source_key: {
@@ -46,187 +68,255 @@ interface LicenseData {
   status?: string;
 }
 
-
-
-
-// This is the main content component that contains all the existing license renewal logic
-function LicenseRenewalContent({
-  searchParams,
-}: {
-  searchParams: { id?: string; token?: string };
-}) {
-  const searchParamsFromHook = useSearchParams();
-  // Prefer id param when logged-in flow; fallback to legacy token
-  const id = searchParams?.id || searchParamsFromHook?.get("id") || "";
-  const token = searchParams?.token || searchParamsFromHook?.get("token") || "";
-
+export default function LicenseRenewalPage() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") || "";
+  const token = searchParams.get("token") || "";
   const [licenseData, setLicenseData] = useState<LicenseData | null>(null);
-  const [extensionDays, setExtensionDays] = useState<number | "">("");
-  const [extensionMonths, setExtensionMonths] = useState<number | "">(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [extensionPeriods, setExtensionPeriods] = useState<ExtensionPeriod[]>(
+    []
+  );
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("");
+  const [openDialog, setOpenDialog] = useState(false);
+  const [dialogContent, setDialogContent] = useState<{
+    title: string;
+    message: string;
+    isError: boolean;
+  }>({ title: "", message: "", isError: false });
+  const [newExpiryDate, setNewExpiryDate] = useState<Date | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [licenseState, setLicenseState] = useState<{
     isAlreadyRenewed?: boolean;
     isNotExpired?: boolean;
     canBeRenewed?: boolean;
   }>({});
-  
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [pendingRenewal, setPendingRenewal] = useState<{
-    daysToAdd: number;
-    newExpiry: Date;
-  } | null>(null);
-
-  const handleLogout = () => {
-    removeAuthToken();
-    window.location.href = "/login";
-  };
-
-  const renderLogoutButton = () => (
-    <button
-      onClick={handleLogout}
-      className="absolute top-4 right-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-    >
-      Logout
-    </button>
-  );
 
   useEffect(() => {
-    const fetchLicenseData = async () => {
-      setLoading(true);
-      setError(null);
-
+    const fetchData = async () => {
       try {
-        // Get current user data from session storage
-        const currentUser = getCurrentUser();
-        if (!currentUser) {
-          throw new Error("User not authenticated. Please log in again.");
-        }
-
-        let loaded: LicenseData | null = null;
-        if (id) {
-          // Logged-in path: fetch by id
-          const byId = await api.get(`/license/${encodeURIComponent(id)}`);
-          loaded = byId.data as LicenseData;
-        } else if (token) {
-          // Legacy token path (if deep-linked)
-          const response = await api.post("/renew-license", { token });
-          if (!response.data.success) {
-            if (response.data.data?.isAlreadyRenewed) {
-              setLicenseState({ isAlreadyRenewed: true });
-              setLicenseData(response.data.data);
-              return;
-            }
-            if (response.data.data?.isNotExpired) {
-              setLicenseState({ isNotExpired: true });
-              setLicenseData(response.data.data);
-              return;
-            }
-            throw new Error(response.data.message || "Failed to fetch license data");
-          }
-          loaded = response.data.data as LicenseData;
+        // If we have a token, we're in the public flow
+        if (token) {
+          await fetchLicenseData(token);
+        } else if (id) {
+          // If we're logged in, we use the ID to fetch license data
+          await fetchLicenseData(id);
         } else {
-          throw new Error("Missing license identifier.");
-        }
-
-        if (!loaded) throw new Error("Unable to load license data");
-
-        // Check if the logged-in user is the CEM for this license
-        if (currentUser.empCode !== loaded?.cem?.cem_code && currentUser.role !== 'admin') {
-          setError(
-            `You are not authorized to renew this license. Only the designated CEM can renew this license.`
-          );
+          setError("License ID or token is required");
           setLoading(false);
-          return;
         }
-
-        // Handle already renewed status consistently
-        if (loaded.status === 'renewed') {
-          setLicenseData(loaded);
-          setLicenseState({ isAlreadyRenewed: true });
-          return;
-        }
-
-        // Enforce allow renew only if expired
-        const isExpired = new Date(loaded.expiry) <= new Date();
-        if (!isExpired) {
-          setLicenseData(loaded);
-          setLicenseState({ isNotExpired: true });
-          return;
-        }
-
-        setLicenseData(loaded);
-        setLicenseState({ canBeRenewed: true });
-      } catch (error: unknown) {
-        if (error instanceof Error) {
-          if ('response' in error) {
-            const axiosError = error as { response?: { data?: { message?: string } } };
-            setError(
-              axiosError.response?.data?.message ||
-                error.message ||
-                "Failed to fetch license data. Please try again later."
-            );
+      } catch (err) {
+        console.error("Error in fetchData:", err);
+        let errorMessage = "Failed to load license data. Please try again.";
+        if (err instanceof Error) {
+          if ('response' in err) {
+            const axiosError = err as { response?: { data?: any } };
+            console.error("API Error Response:", axiosError.response?.data);
+            errorMessage = axiosError.response?.data?.error || 
+                         axiosError.response?.data?.message || 
+                         errorMessage;
           } else {
-            setError(error.message);
+            errorMessage = err.message;
           }
-        } else {
-          setError("An unknown error occurred.");
         }
-      } finally {
+        setError(errorMessage);
         setLoading(false);
       }
     };
 
-    fetchLicenseData();
+    fetchData();
   }, [id, token]);
+
+  const fetchLicenseData = async (idOrToken: string) => {
+    try {
+      let loaded: LicenseData | null = null;
+      
+      // Check if the parameter is a token (contains a colon)
+      const isToken = idOrToken.includes(':');
+      
+      if (isToken) {
+        // Token-based authentication path (public flow)
+        const response = await api.post("/renew-license", { token: idOrToken });
+        if (!response.data.success) {
+          if (response.data.data?.isAlreadyRenewed) {
+            setLicenseState({ isAlreadyRenewed: true });
+            setLicenseData(response.data.data);
+            return;
+          }
+          throw new Error(
+            response.data.message || "Failed to fetch license data with token"
+          );
+        }
+        loaded = response.data.data as LicenseData;
+      } else {
+        // ID-based authentication path (logged-in user)
+        // Only use the ID path if it's a valid MongoDB ObjectId (24 hex characters)
+        const isMongoId = /^[0-9a-fA-F]{24}$/.test(idOrToken);
+        
+        if (isMongoId) {
+          const byId = await api.get(`/license/${idOrToken}`);
+          loaded = byId.data as LicenseData;
+          console.log("Loaded by ID:", loaded);
+        } else {
+          throw new Error("Invalid license ID format. Please check the URL and try again.");
+        }
+      }
+
+      if (!loaded) throw new Error("Unable to load license data");
+
+      // Check if the logged-in user is the CEM for this license or an admin
+      const currentUser = getCurrentUser();
+      if (
+        currentUser?.empCode !== loaded?.cem?.empCode &&
+        currentUser?.role !== "admin"
+      ) {
+        setError(
+          `You are not authorized to renew this license. Only the designated CEM or an admin can renew this license.`
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Handle already renewed status consistently
+      if (loaded.status === "renewed") {
+        setLicenseData(loaded);
+        setLicenseState({ isAlreadyRenewed: true });
+        return;
+      }
+
+      setLicenseData(loaded);
+      setLicenseState({ canBeRenewed: true });
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        if ("response" in error) {
+          const axiosError = error as {
+            response?: { data?: { message?: string } };
+          };
+          setError(
+            axiosError.response?.data?.message ||
+              error.message ||
+              "Failed to fetch license data. Please try again later."
+          );
+        } else {
+          setError(error.message);
+        }
+      } else {
+        setError("An unknown error occurred.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchExtensionPeriods = async () => {
+    try {
+      const response = await api.get("/extension-periods");
+      setExtensionPeriods(response.data);
+      if (response.data.length > 0) {
+        setSelectedPeriod(response.data[0]._id);
+      }
+    } catch (error) {
+      console.error("Error fetching extension periods:", error);
+      setError("Failed to load extension periods. Using default options.");
+    }
+  };
+
+  useEffect(() => {
+    fetchExtensionPeriods();
+  }, []);
+
+  const handleExtensionChange = (
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    setSelectedPeriod(event.target.value);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!licenseData || (!extensionDays && !extensionMonths)) {
-      setError("Please fill in all required fields");
+    // Using predefined extension period
+    const selectedExtension = extensionPeriods.find(
+      (p) => p._id === selectedPeriod
+    );
+    if (!selectedExtension) {
+      setError("Please select an extension period");
       return;
     }
 
-    // Calculate new expiry date from current date
+    const daysToAdd = selectedExtension.days;
     const currentDate = new Date();
-    const daysToAdd = extensionMonths
-      ? Number(extensionMonths) * 30
-      : Number(extensionDays);
-    const newExpiry = new Date(
-      currentDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000
+    const expiryDate = new Date(licenseData!.expiry);
+    const gracePeriodEnd = new Date(expiryDate);
+    gracePeriodEnd.setDate(
+      gracePeriodEnd.getDate() + (licenseData?.grace_period || 0)
     );
 
+    // Calculate new expiry date based on license status
+    const newExpiry = new Date();
+
+    if (currentDate > gracePeriodEnd) {
+      // If license is expired (past expiry + grace period), extend from current date
+      newExpiry.setDate(currentDate.getDate() + daysToAdd);
+    } else {
+      // If license is active or in grace period, extend from expiry date
+      newExpiry.setTime(expiryDate.getTime());
+      newExpiry.setDate(expiryDate.getDate() + daysToAdd);
+    }
+
+    // Save the new expiry date for use in the confirmation
+    setNewExpiryDate(newExpiry);
+
     // Show confirmation dialog
-    setPendingRenewal({ daysToAdd, newExpiry });
-    setShowConfirmation(true);
+    setOpenDialog(true);
+    setDialogContent({
+      title: "Confirm License Renewal",
+      message: `Are you sure you want to renew this license? The license will be extended by ${daysToAdd} days until ${newExpiry.toLocaleDateString()}.`,
+      isError: false,
+    });
   };
 
   const confirmRenewal = async () => {
-    if (!pendingRenewal || !licenseData) return;
-    
+    console.log("Confirming renewal for license:", licenseData);
+    if (!licenseData) return;
+
     try {
-      setSubmitting(true);
+      setIsSubmitting(true);
       setError(null);
-      setShowConfirmation(false);
 
       const payload = {
-        app_id: licenseData.app_id,
+        application: licenseData.application
+          ? {
+              _id: licenseData.application._id,
+              name: licenseData.application.name,
+              identifier:
+                licenseData.application.identifier || licenseData.app_id,
+            }
+          : null,
         client: {
-          id: licenseData.client.id,
+          _id: licenseData.client._id,
           name: licenseData.client.name,
-          contact: licenseData.client.contact,
+          email: licenseData.client.email || "",
+          contact: licenseData.client.contact || "",
+          code: licenseData.client.code || "",
+          country: licenseData.client.country || "",
         },
         cem: {
+          _id: licenseData.cem._id,
           name: licenseData.cem.name,
           email: licenseData.cem.email,
-          cem_code: licenseData.cem.cem_code,
+          empCode: licenseData.cem.empCode,
+          role: "cem",
         },
-        source_key: licenseData.source_key,
+        source_key: {
+          android: licenseData.source_key?.android || "",
+          ios: licenseData.source_key?.ios || "",
+        },
         grace_period: licenseData.grace_period,
-        expiry: pendingRenewal.newExpiry.toISOString(),
+        expiry: newExpiryDate
+          ? newExpiryDate.toISOString()
+          : new Date(licenseData.expiry).toISOString(),
         action: "renew",
       };
 
@@ -244,32 +334,36 @@ function LicenseRenewalContent({
           response.data.license.expiry
         ).toLocaleDateString()}`
       );
-      
+
       // Reset form
-      setExtensionDays("");
-      setExtensionMonths(1);
+      setSelectedPeriod("");
+      setNewExpiryDate(null);
     } catch (error: unknown) {
       console.error("Error renewing license:", error);
-      
+
       if (error instanceof Error) {
-        if ('response' in error) {
-          const axiosError = error as { 
-            response?: { 
-              data?: { 
-                message?: string 
-              } 
-            } 
+        if ("response" in error) {
+          const axiosError = error as {
+            response?: {
+              data?: {
+                message?: string;
+              };
+            };
           };
-          
-          if (axiosError.response?.data?.message?.includes("not authorized to renew")) {
+
+          if (
+            axiosError.response?.data?.message?.includes(
+              "not authorized to renew"
+            )
+          ) {
             setError(
               "You are not authorized to renew this license. Please contact your administrator."
             );
           } else {
             setError(
               axiosError.response?.data?.message ||
-              error.message ||
-              "Failed to renew license. Please try again later."
+                error.message ||
+                "Failed to renew license. Please try again later."
             );
           }
         } else {
@@ -279,48 +373,30 @@ function LicenseRenewalContent({
         setError("An unknown error occurred.");
       }
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
+      setOpenDialog(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen relative">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
+      <Container
+        maxWidth="md"
+        sx={{ mt: 4, display: "flex", justifyContent: "center" }}
+      >
+        <CircularProgress />
+      </Container>
     );
   }
 
   if (licenseState.isAlreadyRenewed && licenseData) {
     return (
       <div className="max-w-4xl mx-auto p-6 relative">
-        {renderLogoutButton()}
         <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded">
           <p className="font-bold">Already Renewed</p>
           <p>
             This license has already been renewed and cannot be renewed again.
           </p>
-          <div className="mt-4">
-            <p>
-              <strong>License Key:</strong> {licenseData.licenseKey}
-            </p>
-            <p>
-              <strong>Expiry Date:</strong>{" "}
-              {new Date(licenseData.expiry).toLocaleDateString()}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (licenseState.isNotExpired && licenseData) {
-    return (
-      <div className="max-w-4xl mx-auto p-6 relative">
-        {renderLogoutButton()}
-        <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded">
-          <p className="font-bold">License Active</p>
-          <p>This license is not expired and cannot be renewed.</p>
           <div className="mt-4">
             <p>
               <strong>License Key:</strong> {licenseData.licenseKey}
@@ -352,7 +428,6 @@ function LicenseRenewalContent({
   if (!licenseData) {
     return (
       <div className="max-w-4xl mx-auto p-6 relative">
-        {renderLogoutButton()}
         <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded">
           <p className="font-bold">No License Data</p>
           <p>
@@ -365,41 +440,34 @@ function LicenseRenewalContent({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 relative">
-      {renderLogoutButton()}
+    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8 relative">
       <Container maxWidth="md">
         {/* Confirmation Dialog */}
         <Dialog
-          open={showConfirmation}
-          onClose={() => setShowConfirmation(false)}
+          open={openDialog}
+          onClose={() => setOpenDialog(false)}
           aria-labelledby="alert-dialog-title"
           aria-describedby="alert-dialog-description"
         >
           <DialogTitle id="alert-dialog-title">
-            Confirm License Renewal
+            {dialogContent.title}
           </DialogTitle>
           <DialogContent>
             <DialogContentText id="alert-dialog-description">
-              Are you sure you want to renew this license? 
-              {pendingRenewal && (
-                <span>
-                  The license will be extended by {pendingRenewal.daysToAdd} days 
-                  until {pendingRenewal.newExpiry.toLocaleDateString()}.
-                </span>
-              )}
+              {dialogContent.message}
             </DialogContentText>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowConfirmation(false)} color="primary">
+            <Button onClick={() => setOpenDialog(false)} color="primary">
               Cancel
             </Button>
-            <Button 
-              onClick={confirmRenewal} 
-              color="primary" 
+            <Button
+              onClick={confirmRenewal}
+              color="primary"
               autoFocus
-              disabled={submitting}
+              disabled={isSubmitting}
             >
-              {submitting ? 'Renewing...' : 'Confirm Renewal'}
+              {isSubmitting ? "Renewing..." : "Confirm Renewal"}
             </Button>
           </DialogActions>
         </Dialog>
@@ -410,190 +478,133 @@ function LicenseRenewalContent({
                 License Renewal
               </h1>
 
-            {successMessage && (
-              <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded mb-6">
-                <p className="font-bold">Success</p>
-                <p>{successMessage}</p>
-              </div>
-            )}
+              {successMessage && (
+                <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded mb-6">
+                  <p className="font-bold">Success</p>
+                  <p>{successMessage}</p>
+                </div>
+              )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-500">
-                    License Key
-                  </label>
-                  <p className="text-gray-900">{licenseData.licenseKey}</p>
-                </div>
-                
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-500">
-                    Current Expiry Date
-                  </label>
-                  <p className="text-gray-900">
-                    {new Date(licenseData.expiry).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-500">
-                    Client Name
-                  </label>
-                  <p className="text-gray-900">
-                    {licenseData.client?.name || "N/A"}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-500">
-                    Grace Period (days)
-                  </label>
-                  <p className="text-gray-900">
-                    {licenseData.grace_period / 24}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-500">
-                    CEM
-                  </label>
-                  <p className="text-gray-900">
-                    {licenseData.cem?.name || "N/A"}
-                  </p>
-                </div>
-              </div>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-gray-500">
+                      Application
+                    </label>
+                    <p className="text-gray-900">
+                      {licenseData.application?.name || "N/A"}
+                      {licenseData.application?.name &&
+                        licenseData.app_id &&
+                        " - "}
+                      {licenseData.app_id}
+                    </p>
+                  </div>
 
-              <div className="border-t border-gray-200 pt-6">
-                <div className="space-y-4">
-                  <div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-gray-500">
+                      Current Expiry Date
+                    </label>
+                    <p className="text-gray-900">
+                      {new Date(licenseData.expiry).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-gray-500">
+                      Client Name
+                    </label>
+                    <p className="text-gray-900">
+                      {licenseData.client?.name || "N/A"}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-gray-500">
+                      Grace Period (days)
+                    </label>
+                    <p className="text-gray-900">{licenseData.grace_period}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-gray-500">
+                      CEM
+                    </label>
+                    <p className="text-gray-900">
+                      {licenseData.cem?.name || "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <div className="space-y-2">
                     <label
-                      htmlFor="extensionMonths"
+                      htmlFor="extensionPeriod"
                       className="block text-sm font-medium text-gray-700 mb-1"
                     >
-                      Extend License For (Months)
+                      Select Extension Period
                     </label>
                     <select
-                      id="extensionMonths"
-                      value={extensionMonths}
-                      onChange={(e) => {
-                        setExtensionMonths(Number(e.target.value) || "");
-                        setExtensionDays("");
-                      }}
+                      id="extensionPeriod"
+                      value={selectedPeriod}
+                      onChange={handleExtensionChange}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="1">1 Month (30 days)</option>
-                      <option value="3">3 Months (90 days)</option>
-                      <option value="6">6 Months (180 days)</option>
-                      <option value="12">12 Months (360 days)</option>
-                      {/* <option value="">Custom (Days)</option> */}
+                      <option value="">-- Select an option --</option>
+                      {extensionPeriods.map((period) => (
+                        <option key={period._id} value={period._id}>
+                          {period.name} - {period.days} days
+                        </option>
+                      ))}
                     </select>
-                  </div>
-
-                  {/* {!extensionMonths && (
-                    <div>
-                      <label
-                        htmlFor="extensionDays"
-                        className="block text-sm font-medium text-gray-700 mb-1"
-                      >
-                        Or Enter Custom Days
-                      </label>
-                      <input
-                        type="number"
-                        id="extensionDays"
-                        value={extensionDays}
-                        onChange={(e) =>
-                          setExtensionDays(Number(e.target.value) || "")
-                        }
-                        min="1"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Enter number of days"
-                      />
-                    </div>
-                  )} */}
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      disabled={
-                        submitting || (!extensionDays && !extensionMonths)
-                      }
-                      className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                        submitting || (!extensionDays && !extensionMonths)
-                          ? "bg-blue-300 cursor-not-allowed"
-                          : "bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                      }`}
-                    >
-                      {submitting ? (
-                        <>
-                          <svg
-                            className="animate-spin -ml-1 mr-2 h-5 w-5 text-white"
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                          >
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            ></circle>
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            ></path>
-                          </svg>
-                          Processing...
-                        </>
-                      ) : (
-                        "Renew License"
-                      )}
-                    </button>
+                    {extensionPeriods.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        No extension periods available
+                      </p>
+                    )}
                   </div>
                 </div>
-              </div>
-            </form>
+
+                <div className="pt-6 border-t border-gray-200">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !selectedPeriod}
+                    className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                      isSubmitting || !selectedPeriod
+                        ? "bg-blue-300 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    }`}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <svg
+                          className="animate-spin -ml-1 mr-2 h-5 w-5 text-white"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        Processing...
+                      </>
+                    ) : (
+                      "Renew License"
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
-      </div>
       </Container>
     </div>
   );
-}
-
-const LoadingComponent = () => (
-  <Container maxWidth="md" sx={{ mt: 4, textAlign: "center" }}>
-    <CircularProgress />
-    <Typography variant="body1" sx={{ mt: 2 }}>
-      Loading license information...
-    </Typography>
-  </Container>
-);
-
-const UnauthorizedComponent = () => (
-  <Container maxWidth="md" sx={{ mt: 4, textAlign: "center" }}>
-    <Alert severity="error">
-      <AlertTitle>Authentication Required</AlertTitle>
-      Please sign in to access the license renewal page.
-    </Alert>
-  </Container>
-);
-
-// Removed unused PageProps type
-
-// Create a wrapper component that will be used with withAuth
-const AuthWrapper = () => {
-  const searchParams = useSearchParams();
-  const id = searchParams?.get("id") || "";
-  const token = searchParams?.get("token") || "";
-  return <LicenseRenewalContent searchParams={{ id, token }} />;
-};
-
-// The actual page component
-export default function LicenseRenewalPage() {
-  const AuthComponent = withAuth({
-    ComponentIfLoggedIn: AuthWrapper,
-    ComponentIfLoggedOut: UnauthorizedComponent,
-    LoadingComponent: LoadingComponent,
-  });
-
-  return <AuthComponent />;
 }
