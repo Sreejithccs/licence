@@ -99,7 +99,7 @@ export default function LicenseListing({
       const apiBaseUrl =
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/dev";
       const token = sessionStorage.getItem("authToken");
-      const response = await fetch(`${apiBaseUrl}/list-licenses`, {
+      const response = await fetch(`${apiBaseUrl}/licenses`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -170,13 +170,16 @@ export default function LicenseListing({
       const apiBaseUrl =
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/dev";
       const token = sessionStorage.getItem("authToken");
-      const response = await fetch(`${apiBaseUrl}/license/${licenseToDelete}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
+      const response = await fetch(
+        `${apiBaseUrl}/licenses/${licenseToDelete}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data?.error || "Failed to delete license");
@@ -205,12 +208,12 @@ export default function LicenseListing({
     }
   };
 
-  const canEdit = (license: License) => {
+  const canEdit = () => {
     // Only admin can edit licenses
     return user?.role === UserRole.ADMIN;
   };
 
-  const canDelete = (license: License) => {
+  const canDelete = () => {
     // Only admin can delete licenses
     return user?.role === UserRole.ADMIN;
   };
@@ -341,7 +344,7 @@ export default function LicenseListing({
                     </TableCell>
                     <TableCell align="right">
                       <Box display="flex" justifyContent="flex-end" gap={1}>
-                        {canEdit(license) && (
+                        {canEdit() && (
                           <Tooltip title="Edit">
                             <IconButton
                               size="small"
@@ -363,7 +366,7 @@ export default function LicenseListing({
                             </IconButton>
                           </Tooltip>
                         )}
-                        {canDelete(license) && (
+                        {canDelete() && (
                           <Tooltip title="Delete">
                             <IconButton
                               size="small"

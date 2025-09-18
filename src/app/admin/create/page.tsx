@@ -97,7 +97,7 @@ export default function CreateLicensePage() {
       }
     };
     fetchData();
-  }, []);
+  }, [apiBaseUrl]);
 
   const handleSubmit = async (data: LicenseSubmitData) => {
     setLoading((prev) => ({ ...prev, submit: true }));
@@ -106,7 +106,7 @@ export default function CreateLicensePage() {
 
     try {
       const token = sessionStorage.getItem("authToken");
-      const response = await fetch(`${apiBaseUrl}/issue`, {
+      const response = await fetch(`${apiBaseUrl}/licenses/issue`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

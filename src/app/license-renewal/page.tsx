@@ -2,10 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import Typography from "@mui/material/Typography";
-import Alert from "@mui/material/Alert";
-import AlertTitle from "@mui/material/AlertTitle";
-import { getCurrentUser, removeAuthToken } from "@/utils/auth";
+import { getCurrentUser } from "@/utils/auth";
 import api from "@/utils/api";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -13,14 +10,8 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
-import Radio from "@mui/material/Radio";
-import RadioGroup from "@mui/material/RadioGroup";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import FormControl from "@mui/material/FormControl";
-import FormLabel from "@mui/material/FormLabel";
 import Container from "@mui/material/Container";
 import CircularProgress from "@mui/material/CircularProgress";
-import Box from "@mui/material/Box";
 
 interface ExtensionPeriod {
   _id: string;
@@ -111,12 +102,15 @@ export default function LicenseRenewalPage() {
         console.error("Error in fetchData:", err);
         let errorMessage = "Failed to load license data. Please try again.";
         if (err instanceof Error) {
-          if ('response' in err) {
-            const axiosError = err as { response?: { data?: any } };
+          if ("response" in err) {
+            const axiosError = err as {
+              response?: { data?: { error?: string; message?: string } };
+            };
             console.error("API Error Response:", axiosError.response?.data);
-            errorMessage = axiosError.response?.data?.error || 
-                         axiosError.response?.data?.message || 
-                         errorMessage;
+            errorMessage =
+              axiosError.response?.data?.error ||
+              axiosError.response?.data?.message ||
+              errorMessage;
           } else {
             errorMessage = err.message;
           }
@@ -132,13 +126,19 @@ export default function LicenseRenewalPage() {
   const fetchLicenseData = async (idOrToken: string) => {
     try {
       let loaded: LicenseData | null = null;
-      
+
       // Check if the parameter is a token (contains a colon)
-      const isToken = idOrToken.includes(':');
-      
+      const isToken = idOrToken.includes(":");
+
       if (isToken) {
         // Token-based authentication path (public flow)
-        const response = await api.post("/renew-license", { token: idOrToken });
+        const response = await api.post("/licenses/renew", {
+          token: idOrToken
+        }, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
         if (!response.data.success) {
           if (response.data.data?.isAlreadyRenewed) {
             setLicenseState({ isAlreadyRenewed: true });
@@ -154,13 +154,15 @@ export default function LicenseRenewalPage() {
         // ID-based authentication path (logged-in user)
         // Only use the ID path if it's a valid MongoDB ObjectId (24 hex characters)
         const isMongoId = /^[0-9a-fA-F]{24}$/.test(idOrToken);
-        
+
         if (isMongoId) {
-          const byId = await api.get(`/license/${idOrToken}`);
+          const byId = await api.get(`/licenses/${idOrToken}`);
           loaded = byId.data as LicenseData;
           console.log("Loaded by ID:", loaded);
         } else {
-          throw new Error("Invalid license ID format. Please check the URL and try again.");
+          throw new Error(
+            "Invalid license ID format. Please check the URL and try again."
+          );
         }
       }
 
@@ -321,17 +323,18 @@ export default function LicenseRenewalPage() {
       };
 
       // Use base URL's /issue (don't duplicate /dev)
-      const response = await api.post("/issue", payload);
+      const response = await api.post("/licenses/issue", payload);
+      console.log("Renewed license:", response.data);
 
       setLicenseData({
         ...licenseData,
-        licenseKey: response.data.license.licenseKey,
-        expiry: response.data.license.expiry,
+        licenseKey: response.data.licenseKey,
+        expiry: response.data.expiry,
       });
 
       setSuccessMessage(
         `License renewed successfully! New expiry date: ${new Date(
-          response.data.license.expiry
+          response.data.expiry
         ).toLocaleDateString()}`
       );
 

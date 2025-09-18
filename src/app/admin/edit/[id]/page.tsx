@@ -44,14 +44,11 @@ export default function EditLicensePage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [cemLoading, setCemLoading] = useState(false);
-  const [cemError, setCemError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchCems = async () => {
       try {
         setCemLoading(true);
-        setCemError("");
         const apiBaseUrl =
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/dev";
         const token = sessionStorage.getItem("authToken");
@@ -63,7 +60,7 @@ export default function EditLicensePage() {
         console.log("cem data: ", data);
         setCemOptions(Array.isArray(data) ? data : []);
       } catch (e: unknown) {
-        setCemError(e instanceof Error ? e.message : "Failed to load CEMs");
+        console.error(e instanceof Error ? e.message : "Failed to load CEMs");
       } finally {
         setCemLoading(false);
       }
@@ -112,7 +109,7 @@ export default function EditLicensePage() {
         const apiBaseUrl =
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/dev";
         const token = sessionStorage.getItem("authToken");
-        const resp = await fetch(`${apiBaseUrl}/license/${id}`, {
+        const resp = await fetch(`${apiBaseUrl}/licenses/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -168,7 +165,7 @@ export default function EditLicensePage() {
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/dev";
       const token = sessionStorage.getItem("authToken");
 
-      const resp = await fetch(`${apiBaseUrl}/license/${id}`, {
+      const resp = await fetch(`${apiBaseUrl}/licenses/${id}`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -222,7 +219,7 @@ export default function EditLicensePage() {
               applications: loading,
               clients: loading,
               cems: cemLoading,
-              submit: submitting,
+              submit: loading,
             }}
             error={error}
             success={success}
