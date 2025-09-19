@@ -1,14 +1,9 @@
 "use client";
-import { useRouter } from 'next/navigation';
+import { useRouter } from "next/navigation";
 import { getCurrentUser, UserRole } from "@/utils/auth";
 import SharedToolbar from "@/components/SharedToolbar";
-import {
-  Box,
-  Container,
-  CircularProgress,
-  Typography,
-} from "@mui/material";
-import { useEffect, useState } from 'react';
+import { Box, Container, CircularProgress, Typography } from "@mui/material";
+import { useEffect, useState } from "react";
 
 export default function AdminLayout({
   children,
@@ -24,14 +19,14 @@ export default function AdminLayout({
       try {
         const user = getCurrentUser();
         const currentPath = window.location.pathname;
-        
+
         if (!user) {
           // If no user is logged in, redirect to login with the current path as callback
-          const callbackUrl = currentPath === '/login' ? '/admin' : currentPath;
+          const callbackUrl = currentPath === "/login" ? "/admin" : currentPath;
           router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
           return;
         }
-        
+
         // Allow Admin access to all admin routes
         if (user.role === UserRole.ADMIN) {
           setIsAdmin(true);
@@ -39,40 +34,46 @@ export default function AdminLayout({
         }
 
         // Allow CEM to access edit page under admin, but not the full admin
-        const isEditRoute = currentPath.startsWith('/admin/edit/');
+        const isEditRoute = currentPath.startsWith("/admin/edit/");
         if (user.role === UserRole.CEM && isEditRoute) {
           setIsAdmin(true);
           return;
         }
 
         // Otherwise, redirect non-admins away from admin pages
-        const redirectPath = user.role === UserRole.CEM ? '/cem-dashboard' : '/';
+        const redirectPath =
+          user.role === UserRole.CEM ? "/cem-dashboard" : "/";
         router.push(redirectPath);
         return;
       } catch (error) {
-        console.error('Authentication error:', error);
-        router.push('/login');
+        console.error("Authentication error:", error);
+        router.push("/login");
       } finally {
         setIsLoading(false);
       }
     };
 
     checkAuth();
-    
+
     // Listen for storage events to handle logout from other tabs
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'authToken' && !e.newValue) {
-        router.push('/login');
+      if (e.key === "authToken" && !e.newValue) {
+        router.push("/login");
       }
     };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, [router]);
 
   if (isLoading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="100vh"
+      >
         <CircularProgress />
       </Box>
     );
@@ -83,9 +84,26 @@ export default function AdminLayout({
   }
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: "100vh",
+        position: "relative",
+        width: "100%",
+      }}
+    >
       <SharedToolbar title="Admin Dashboard" />
-      <Container component="main" maxWidth="lg" sx={{ mt: 4, mb: 4, flex: 1 }}>
+      <Container
+        component="main"
+        maxWidth="lg"
+        sx={{
+          mt: 4,
+          mb: 4,
+          flex: "1 0 auto",
+          paddingBottom: "80px", // Add space for footer
+        }}
+      >
         {children}
       </Container>
       <Box
@@ -93,13 +111,16 @@ export default function AdminLayout({
         sx={{
           py: 3,
           px: 2,
-          mt: "auto",
+          position: "absolute",
+          bottom: 0,
+          width: "100%",
           backgroundColor: (theme) => theme.palette.grey[200],
         }}
       >
         <Container maxWidth="lg">
           <Typography variant="body2" color="text.secondary" align="center">
-            © {new Date().getFullYear()} CCS Technologies IT (P) Ltd. All rights reserved.
+            © {new Date().getFullYear()} CCS Technologies IT (P) Ltd. All rights
+            reserved.
           </Typography>
         </Container>
       </Box>
